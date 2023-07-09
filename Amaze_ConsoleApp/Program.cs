@@ -30,7 +30,6 @@ namespace MyApp
             try
             {
                 //See if we registered, if yes then read info
-
                 PlayerInfo playerInfo = new PlayerInfo();
 
                 playerInfo = await amazeingClient.GetPlayerInfo();
@@ -55,6 +54,7 @@ namespace MyApp
                     try
                     {
                         //Register
+                        //This is definitely not good here because we will exit without playing after registration
                         await amazeingClient.RegisterPlayer($"{playerName}");
                     }
                     catch (ApiException registrationException)
@@ -88,11 +88,9 @@ namespace MyApp
         private static async void TraverseAMaze(AmazeingClient amazeingClient,PlayerInfo playerInfo ,ICollection<MazeInfo> allMazeInfo)
         {
             //Maze-level variables
-
             List<Coordinate> visitedCoordinates = new List<Coordinate>();
 
             //Enter a maze - this chooses one and returns the info of the current maze
-
             MazeInfo currentMazeInfo = await ChooseNextMaze(amazeingClient, playerInfo, allMazeInfo);
 
             //Remove it from our list so we don't try to enter it again
@@ -201,9 +199,7 @@ namespace MyApp
             //if (!adjacentTile.HasBeenVisited)
             //{
             //    await amazeingClient.Move(adjacentTile.Direction);
-
             //    possibleActionsAndCurrentScore = await amazeingClient.PossibleActions();
-
             //}
 
             //If we make a call here need to make it async again
