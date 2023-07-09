@@ -13,24 +13,45 @@ namespace MyApp
         static async Task Main(string[] args)
         {
 
-            Console.WriteLine("Hello!");
+            Console.WriteLine("Hello! Welcome to the Amazeing Console App");
 
-            //List to keep track of discovered tiles - move it to traverseMaze
+            //Global variables
+            string authToken = "HTI Thanks You [3KE]";
+            string playerName = "RichardS";
 
-            var discoveredList = new List<string>();
+            client.DefaultRequestHeaders.Add("Authorization", $"{authToken}");
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            //Register here
+            AmazeingClient amazeingClient = new AmazeingClient("https://maze.hightechict.nl", client);
 
-            //RegisterPlayer();
+            try
+            {
+                //See if we registered, if yes then read info
 
-            
+                PlayerInfo playerInfo = new PlayerInfo();
 
+                playerInfo = await amazeingClient.GetPlayerInfo();
 
-
+                Console.WriteLine(playerInfo);
+            }
+            catch (ApiException ex)
+            {
+                //We haven't registered yet
+                if(ex.StatusCode == 404)
+                {
+                    try
+                    {
+                        //Register
+                        await amazeingClient.RegisterPlayer($"{playerName}");
+                    }
+                    catch (ApiException registrationException)
+                    {
+                        Console.WriteLine(registrationException);
+                        return;
+                    }
+                }
+            }
         }
-
-
-        private static AmazeingClient amazeingClient = new AmazeingClient("", client);
 
         private static HttpClient client = new HttpClient()
         {
