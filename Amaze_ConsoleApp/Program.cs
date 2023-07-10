@@ -1,12 +1,15 @@
 ﻿using HightechICT.Amazeing.Client.Rest;
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Reflection.Metadata;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using static MyApp.Program;
+using static System.Net.Mime.MediaTypeNames;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace MyApp
@@ -42,7 +45,30 @@ namespace MyApp
                 ICollection<MazeInfo> allMazeInfo = await amazeingClient.AllMazes();
 
                 //Traverse the mazes
-                TraverseAMaze(amazeingClient, playerInfo, allMazeInfo);
+                //updatedPlayerInfo = await TraverseMaze(amazeingClient, playerInfo, allMazeInfo);
+
+                //If we have more mazes in our list, we enter the next one
+                if (allMazeInfo.Count > 0)
+                {
+                    var currentPlayerInfo = await amazeingClient.GetPlayerInfo();
+                    var newPlayerInfo = await TraverseMaze(amazeingClient, currentPlayerInfo, allMazeInfo);
+                }
+                else
+                {
+                    Console.WriteLine("Finished all the mazes");
+                }
+
+                foreach (var maze in allMazeInfo)
+                {
+                    //Enter a maze - this chooses one and returns the info of the current maze
+                    MazeInfo currentMazeInfo = await ChooseNextMaze(amazeingClient, playerInfo, allMazeInfo);
+
+                    //Remove it from our list so we don't try to enter it again
+                    allMazeInfo.Remove(currentMazeInfo);
+
+                    var currentPlayerInfo = await amazeingClient.GetPlayerInfo();
+                    var newPlayerInfo = await TraverseMaze(amazeingClient, currentPlayerInfo, allMazeInfo);
+                }
 
 
             }
@@ -77,7 +103,6 @@ namespace MyApp
                 if (Console.ReadKey().Key == ConsoleKey.Enter)
                 {
                     await amazeingClient.ForgetPlayer();
-                    Console.WriteLine($"{amazeingClient.ForgetPlayer().Status}");
                     return;
                 }
                 else return;
@@ -85,16 +110,16 @@ namespace MyApp
         }
 
         //Calls choose next maze, enters it, and get's 
-        private static async void TraverseAMaze(AmazeingClient amazeingClient,PlayerInfo playerInfo ,ICollection<MazeInfo> allMazeInfo)
+        private static async Task<PlayerInfo> TraverseMaze(AmazeingClient amazeingClient,PlayerInfo playerInfo ,ICollection<MazeInfo> allMazeInfo)
         {
             //Maze-level variables
             List<Coordinate> visitedCoordinates = new List<Coordinate>();
 
-            //Enter a maze - this chooses one and returns the info of the current maze
-            MazeInfo currentMazeInfo = await ChooseNextMaze(amazeingClient, playerInfo, allMazeInfo);
+            ////Enter a maze - this chooses one and returns the info of the current maze
+            //MazeInfo currentMazeInfo = await ChooseNextMaze(amazeingClient, playerInfo, allMazeInfo);
 
-            //Remove it from our list so we don't try to enter it again
-            allMazeInfo.Remove(currentMazeInfo);
+            ////Remove it from our list so we don't try to enter it again
+            //allMazeInfo.Remove(currentMazeInfo);
                 
             //We just entered a new Maze so we are at 0,0 coordinates
             Coordinate currentCoordinate = new Coordinate(0, 0);
@@ -135,6 +160,7 @@ namespace MyApp
             //The moveAction we will take 
             MoveAction chosenAction = DecideNextTarget(amazeingClient, possibleMoveActions, currentCoordinate, visitedCoordinates);
             possibleActionsAndCurrentScore = await GoToNextTile(amazeingClient, chosenAction.Direction);
+
             //First stage
             while (currentMazeInfo.PotentialReward > playerInfo.MazeScoreInBag)
             {
@@ -143,7 +169,7 @@ namespace MyApp
                 possibleActionsAndCurrentScore = await GoToNextTile(amazeingClient, chosenAction.Direction);
 
                 //Set the new coordinates based on the direction we traveled
-                currentCoordinate = SetNewCoordinates(currentCoordinate, chosenAction.Direction);
+                currentCoordinate = GetNewCoordinates(currentCoordinate, chosenAction.Direction);
 
                 if (!visitedCoordinates.Contains(currentCoordinate))
                 {
@@ -160,11 +186,15 @@ namespace MyApp
 
             //Need to exit old maze before we get here 
             //If we have more mazes in our list, we enter the next one
-            if (allMazeInfo.Count > 0)
-            {
-                var updatedPlayerInfo = await amazeingClient.GetPlayerInfo();
-                TraverseAMaze(amazeingClient, updatedPlayerInfo, allMazeInfo);
-            }
+            //if (allMazeInfo.Count > 0)
+            //{
+            //    var updatedPlayerInfo = await amazeingClient.GetPlayerInfo();
+            //    var newPlayerInfo = await TraverseMaze(amazeingClient, updatedPlayerInfo, allMazeInfo);
+            //}
+            //else
+            //{
+            //    Console.WriteLine("Finished all the mazes");
+            //}
         }
 
         private static MoveAction DecideNextTarget(AmazeingClient amazeingClient, ICollection<MoveAction> possibleMoveActions, Coordinate currentCoordinate, List<Coordinate> visitedCoordinates)
@@ -204,18 +234,53 @@ namespace MyApp
 
             //If we make a call here need to make it async again
 
+
+            //Actual task: Decide and return a possibleMoveAction depending on the direction we choose.
+
             //For now we just take the first available action
-            var chosenAction = possibleMoveActions.First();
+            MoveAction chosenAction = new MoveAction();
 
-            //Iterate through them to decide? Lookup here? 
-            foreach (var tile in possibleMoveActions)
+            var chosenAction2 = new MoveAction();
+
+            //Maybe give a score to each possibility to help decide?
+            //This foreach doesn't have to go over everything if we found a suitable candidate to go to
+            foreach (var moveAction in possibleMoveActions)
             {
-                if (tile.HasBeenVisited)
+                //If we don't have the coordinate in the list BUT we get back has been visited, it's a looped maze. (Or a bug in the coordinate creation)
+                //Also what to do now that we know it's a loop
+                //Well we know the X or Y coordinate, despite not knowing where are we on the other axis
+                //If we come from left or right, we know X - that didn't change - look for highest Y value with the current X and there we are
+                //If we come from top or bottom, we know Y - that didn't change - look for highest X value with the current Y and there we are
+                if (!visitedCoordinates.Contains(GetNewCoordinates(currentCoordinate, moveAction.Direction)) && moveAction.HasBeenVisited)
                 {
-
+                    //For now we just notify
+                    Console.WriteLine("This might be a looped maze");
                 }
+                //If we haven't visited yet, we do want to visit it
+                else if (!moveAction.HasBeenVisited)
+                {
+                    chosenAction = moveAction;
+                    break;
+                }
+                //If we visited it and it is in the list - skip for now?
+                else if (moveAction.HasBeenVisited)
+                {
+                    //We only want to come here if there is no other option in the list
+                }
+
             }
-            
+
+            //if (chosenAction.Direction != Direction.Up)
+            //{
+
+            //}
+
+            //Stage 2 - This can help decide in lookahead
+            //if (!visitedCoordinates.Contains(GetNewCoordinates(currentCoordinate, moveAction.Direction)))
+            //{
+
+            //}
+
             return chosenAction;
         }
 
@@ -226,7 +291,7 @@ namespace MyApp
             return await amazeingClient.PossibleActions();
         }
 
-        private static Coordinate SetNewCoordinates(Coordinate currentCoordinate, Direction chosenDirection)
+        private static Coordinate GetNewCoordinates(Coordinate currentCoordinate, Direction chosenDirection)
         {
             if (chosenDirection == Direction.Right)
             {
