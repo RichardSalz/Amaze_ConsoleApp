@@ -66,6 +66,8 @@ namespace MyApp
                 }
             }
 
+            Console.ReadKey();
+
             //Easily delete the player when we finished
             Console.WriteLine("Do you want to delete the player before exiting the program? Type  \"yes\" if yes");
 
@@ -85,7 +87,7 @@ namespace MyApp
         }
 
         //Calls choose next maze, enters it, and get's 
-        private static async Task<PlayerInfo> TraverseMaze(AmazeingClient amazeingClient,PlayerInfo playerInfo ,MazeInfo currentMazeInfo)
+        private static async Task<PlayerInfo> TraverseMaze(AmazeingClient amazeingClient,PlayerInfo playerInfo , MazeInfo currentMazeInfo)
         {
             //Maze-level variables
             List<Coordinate> visitedCoordinates = new List<Coordinate>();
@@ -120,7 +122,7 @@ namespace MyApp
             {
                 chosenAction = DecideNextTargetForTraversing(amazeingClient, possibleMoveActions, currentCoordinate, visitedCoordinates);
 
-                possibleActionsAndCurrentScore = await GoToNextTile(amazeingClient, chosenAction.Direction);
+                possibleActionsAndCurrentScore = await amazeingClient.Move(chosenAction.Direction);
 
                 //Set the new coordinates based on the direction we traveled
                 currentCoordinate = GetNewCoordinates(currentCoordinate, chosenAction.Direction);
