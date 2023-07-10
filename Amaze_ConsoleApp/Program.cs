@@ -8,9 +8,6 @@ using System.Reflection.Metadata;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using static MyApp.Program;
-using static System.Net.Mime.MediaTypeNames;
-using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace MyApp
 {
@@ -44,33 +41,11 @@ namespace MyApp
                 //All the mazes with info
                 ICollection<MazeInfo> allMazeInfo = await amazeingClient.AllMazes();
 
-                //Traverse the mazes
-                //updatedPlayerInfo = await TraverseMaze(amazeingClient, playerInfo, allMazeInfo);
-
-                //If we have more mazes in our list, we enter the next one
-                if (allMazeInfo.Count > 0)
-                {
-                    var currentPlayerInfo = await amazeingClient.GetPlayerInfo();
-                    var newPlayerInfo = await TraverseMaze(amazeingClient, currentPlayerInfo, allMazeInfo);
-                }
-                else
-                {
-                    Console.WriteLine("Finished all the mazes");
-                }
-
                 foreach (var maze in allMazeInfo)
                 {
-                    //Enter a maze - this chooses one and returns the info of the current maze
-                    MazeInfo currentMazeInfo = await ChooseNextMaze(amazeingClient, playerInfo, allMazeInfo);
-
-                    //Remove it from our list so we don't try to enter it again
-                    allMazeInfo.Remove(currentMazeInfo);
-
-                    var currentPlayerInfo = await amazeingClient.GetPlayerInfo();
-                    var newPlayerInfo = await TraverseMaze(amazeingClient, currentPlayerInfo, allMazeInfo);
+                    //var currentPlayerInfo = await amazeingClient.GetPlayerInfo();
+                    playerInfo = await TraverseMaze(amazeingClient, playerInfo, maze);
                 }
-
-
             }
             catch (ApiException ex)
             {
@@ -110,16 +85,13 @@ namespace MyApp
         }
 
         //Calls choose next maze, enters it, and get's 
-        private static async Task<PlayerInfo> TraverseMaze(AmazeingClient amazeingClient,PlayerInfo playerInfo ,ICollection<MazeInfo> allMazeInfo)
+        private static async Task<PlayerInfo> TraverseMaze(AmazeingClient amazeingClient,PlayerInfo playerInfo ,MazeInfo currentMazeInfo)
         {
             //Maze-level variables
             List<Coordinate> visitedCoordinates = new List<Coordinate>();
 
-            ////Enter a maze - this chooses one and returns the info of the current maze
-            //MazeInfo currentMazeInfo = await ChooseNextMaze(amazeingClient, playerInfo, allMazeInfo);
-
-            ////Remove it from our list so we don't try to enter it again
-            //allMazeInfo.Remove(currentMazeInfo);
+            //Enter a maze - this chooses one and returns the info of the current maze
+            await amazeingClient.EnterMaze($"{currentMazeInfo.Name}");
                 
             //We just entered a new Maze so we are at 0,0 coordinates
             Coordinate currentCoordinate = new Coordinate(0, 0);
@@ -132,24 +104,6 @@ namespace MyApp
 
             possibleActionsAndCurrentScore = await amazeingClient.PossibleActions();
 
-            //Tile - how to map 
-
-            //This reduces the need for API calls right?
-
-            //IF moveaction up - add y+1
-            //IF moveaction right - add x+1
-            //IF moveaction down - add y-1
-            //IF moveaction left - add x-1
-
-            //Then we compare 
-
-            //If we have coordinates we could save exit points and collecting points globally, so we can always ask them
-            //If we have the current coordinates and where do we want to go we at least can make a direction suggestion
-            //So we go in the right direction and don't wast time
-            //This suggestion could be a param (optional?) to the moves so it prefers those directions that are corresponding to the direction we want to go
-
-            //MoveActions 
-
             ICollection<MoveAction> possibleMoveActions = possibleActionsAndCurrentScore.PossibleMoveActions;
 
             //First decide what the goal is, there are 3 stages
@@ -158,13 +112,13 @@ namespace MyApp
             // - Look for exit point
 
             //The moveAction we will take 
-            MoveAction chosenAction = DecideNextTarget(amazeingClient, possibleMoveActions, currentCoordinate, visitedCoordinates);
+            MoveAction chosenAction = DecideNextTargetForTraversing(amazeingClient, possibleMoveActions, currentCoordinate, visitedCoordinates);
             possibleActionsAndCurrentScore = await GoToNextTile(amazeingClient, chosenAction.Direction);
 
             //First stage
             while (currentMazeInfo.PotentialReward > playerInfo.MazeScoreInBag)
             {
-                chosenAction = DecideNextTarget(amazeingClient, possibleMoveActions, currentCoordinate, visitedCoordinates);
+                chosenAction = DecideNextTargetForTraversing(amazeingClient, possibleMoveActions, currentCoordinate, visitedCoordinates);
 
                 possibleActionsAndCurrentScore = await GoToNextTile(amazeingClient, chosenAction.Direction);
 
@@ -180,60 +134,25 @@ namespace MyApp
             }
             //Second stage - look for scorecollection
 
+            if (currentMazeInfo.PotentialReward == playerInfo.MazeScoreInHand)
+            {
+                //chosenAction = DecideNextTargetForScoreCollection();
+            }
+
             //Third stage - look for exit and exit there
 
-            await amazeingClient.ExitMaze();
+            if(playerInfo.MazeScoreInBag == playerInfo.MazeScoreInHand && playerInfo.MazeScoreInBag == currentMazeInfo.PotentialReward)
+            {
+                //chosenAction = DecideNextTargetForExit();
+                await amazeingClient.ExitMaze();
+            }
 
-            //Need to exit old maze before we get here 
-            //If we have more mazes in our list, we enter the next one
-            //if (allMazeInfo.Count > 0)
-            //{
-            //    var updatedPlayerInfo = await amazeingClient.GetPlayerInfo();
-            //    var newPlayerInfo = await TraverseMaze(amazeingClient, updatedPlayerInfo, allMazeInfo);
-            //}
-            //else
-            //{
-            //    Console.WriteLine("Finished all the mazes");
-            //}
+            return await amazeingClient.GetPlayerInfo();
         }
 
-        private static MoveAction DecideNextTarget(AmazeingClient amazeingClient, ICollection<MoveAction> possibleMoveActions, Coordinate currentCoordinate, List<Coordinate> visitedCoordinates)
+        private static MoveAction DecideNextTargetForTraversing(AmazeingClient amazeingClient, ICollection<MoveAction> possibleMoveActions, Coordinate currentCoordinate, List<Coordinate> visitedCoordinates)
         {
             //Decide which direction to go 
-
-            //Option1: - we can only go where we came from
-            //We have 1 possibleMoveAction, we go that way which is probably visited (except start)
-
-            //Option2: - we can go where we came from and one more
-            //We have 2 possibleMoveAction
-            // - we go one way - which is not visited
-            // - the other is where we coming from
-
-            //Option3:
-            //We have 3 possibleMoveAction
-            // - one is where we came from
-            // - Need to choose between the two
-            //IF we have visited one and not the other, then go that way
-            //ELSE IF we have visited both 
-            //ELSE IF we visited none
-
-
-            //Option4: this is a cross section we can go anywhere
-            //We have 4 possibleMoveAction  
-            // - one where we came from
-            // - three others
-
-            //Need a lookahead method to decide the next steps next step
-
-            //If we haven't visited this tile yet - to compare with our own coordinates list
-            //if (!adjacentTile.HasBeenVisited)
-            //{
-            //    await amazeingClient.Move(adjacentTile.Direction);
-            //    possibleActionsAndCurrentScore = await amazeingClient.PossibleActions();
-            //}
-
-            //If we make a call here need to make it async again
-
 
             //Actual task: Decide and return a possibleMoveAction depending on the direction we choose.
 
@@ -310,39 +229,6 @@ namespace MyApp
                 return new Coordinate((int)currentCoordinate.X, (int)currentCoordinate.Y + 1);
             }
             else return currentCoordinate;
-        }
-
-        public static async Task<MazeInfo> ChooseNextMaze(AmazeingClient amazeingClient, PlayerInfo playerInfo, ICollection<MazeInfo> allMazeInfo)
-        {
-            try
-            {
-                MazeInfo alreadyEnteredMaze = new MazeInfo();
-                //Check if we are already in a Maze beacuse of testing
-                if (playerInfo.IsInMaze)
-                {
-                    alreadyEnteredMaze = allMazeInfo.Where(x => x.Name == playerInfo.Maze).ToList().First();
-                }
-                else
-                {
-                    foreach (var maze in allMazeInfo)
-                    {
-                        await amazeingClient.EnterMaze($"{maze.Name}");
-
-                        //If we succeed, we need to remove it from the list 
-                        allMazeInfo.Remove(maze);
-                        //Return the shortened list
-                        return maze;
-                    }
-                    //No more mazes:
-                    return alreadyEnteredMaze;
-                }
-                return alreadyEnteredMaze;
-            }
-            catch (ApiException mazeEnterException)
-            {
-                Console.WriteLine(mazeEnterException.Message);
-                return new MazeInfo();
-            }
         }
 
         private static HttpClient client = new HttpClient()
